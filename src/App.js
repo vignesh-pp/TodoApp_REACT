@@ -7,21 +7,24 @@ import {
   ListItem,
   ListItemText,
   IconButton,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  FormControlLabel,
-  Switch,
   Typography,
   Box,
-  Divider,
 } from "@mui/material";
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from "@mui/material";
+import AlarmOnIcon from "@mui/icons-material/AlarmOn";
 import { Delete, Edit, CheckCircle } from "@mui/icons-material";
 import { ArrowBackIos, ArrowForwardIos } from "@mui/icons-material";
 import Autocomplete from "@mui/material/Autocomplete";
-
-const categories = ["All", "Work", "Study", "Shopping", "Fitness", "Personal"];
+import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
+// import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
+import dayjs from "dayjs";
+import Sound from "../src/assets/sounds/alarm.mp3"; // Adjust the path as necessary
 
 function App() {
   const [todos, setTodos] = useState(
@@ -42,7 +45,11 @@ function App() {
   const [category, setCategory] = useState("Personal");
   const [filterCategory, setFilterCategory] = useState("All");
   const [darkMode, setDarkMode] = useState(true);
-
+  const [selectedTime, setSelectedTime] = useState(dayjs());
+  const [isAlarmActive, setIsAlarmActive] = useState(false);
+  const [audioInstance, setAudioInstance] = useState(null);
+  const [alarmTimeoutId, setAlarmTimeoutId] = useState(null);
+  
   // Load todos and categories from localStorage on mount
   useEffect(() => {
     const storedTodos = localStorage.getItem("todos");
@@ -56,6 +63,56 @@ function App() {
       }
     }
   }, []);
+
+  const playAlarm = () => {
+    const audio = new Audio(Sound);
+    audio.play();
+    setAudioInstance(audio);
+
+    const timeoutId = setTimeout(() => {
+        setIsAlarmActive(false);
+        audio.pause();
+        audio.currentTime = 0;
+        setAudioInstance(null);
+    }, 10000);
+
+    setAlarmTimeoutId(timeoutId);
+    setIsAlarmActive(true);
+};
+const stopAlarm = () => {
+  if (audioInstance) {
+      audioInstance.pause();
+      audioInstance.currentTime = 0;
+      setAudioInstance(null);
+  }
+  if (alarmTimeoutId) {
+      clearTimeout(alarmTimeoutId);
+      setAlarmTimeoutId(null);
+  }
+  setIsAlarmActive(false);
+};
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const currentTime = dayjs().format("HH:mm");
+      console.log(currentTime);
+
+      const updatedTodos = todos.map((todo) => {
+        if (
+          todo.alarmTime === currentTime
+          // && !todo.alarmTriggered
+        ) {
+          // setIsAlarmActive(true);
+          playAlarm();
+          return { ...todo, alarmTriggered: true };
+        }
+        return todo;
+      });
+      setTodos(updatedTodos);
+    }, 10000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, [todos]);
 
   // Store todos whenever they change
   useEffect(() => {
@@ -71,10 +128,20 @@ function App() {
   const handleAdd = () => {
     if (!input.trim()) return;
 
+    const formattedTime = selectedTime ? selectedTime.format("HH:mm") : null;
+
     if (editId) {
       setTodos(
         todos.map((todo) =>
-          todo.id === editId ? { ...todo, text: input, category } : todo
+          todo.id === editId
+            ? {
+                ...todo,
+                text: input,
+                category,
+                alarmTime: formattedTime,
+                alarmTriggered: false, // reset alarm when updated
+              }
+            : todo
         )
       );
       setEditId(null);
@@ -84,12 +151,15 @@ function App() {
         text: input,
         category,
         completed: false,
+        alarmTime: formattedTime,
+        alarmTriggered: false, // prevent immediate triggering
       };
       setTodos([...todos, newTodo]);
     }
 
     setInput("");
     setCategory("Personal");
+    setSelectedTime(null); // Clear time after adding
   };
 
   const handleDelete = (id) => {
@@ -197,91 +267,146 @@ function App() {
               },
             }}
           />
-
-          <Autocomplete
-            freeSolo
-            value={category}
-            onChange={(event, newValue) => {
-              if (typeof newValue === "string") {
-                // User typed and selected "Add 'XYZ'"
-                if (!categories.includes(newValue)) {
-                  setCategories([...categories, newValue]);
-                }
-                setCategory(newValue);
-              } else if (newValue && newValue.inputValue) {
-                // Clicked the "Add 'XYZ'" option
-                if (!categories.includes(newValue.inputValue)) {
-                  setCategories([...categories, newValue.inputValue]);
-                }
-                setCategory(newValue.inputValue);
-              } else {
-                setCategory(newValue || "");
-              }
-            }}
-            filterOptions={(options, params) => {
-              const filtered = options.filter((opt) => opt !== "All");
-              const { inputValue } = params;
-
-              const isExisting = filtered.some(
-                (option) => inputValue.toLowerCase() === option.toLowerCase()
-              );
-
-              if (inputValue !== "" && !isExisting) {
-                filtered.push({
-                  inputValue,
-                  label: `➕ Add "${inputValue}"`,
-                });
-              }
-
-              return filtered;
-            }}
-            selectOnFocus
-            clearOnBlur
-            handleHomeEndKeys
-            options={categories.filter((c) => c !== "All")}
-            getOptionLabel={(option) => {
-              // Handle "Add 'xyz'" structure
-              if (typeof option === "string") return option;
-              if (option.inputValue) return option.inputValue;
-              return option.label || option;
-            }}
-            renderOption={(props, option) => (
-              <li {...props}>
-                {typeof option === "string" ? option : option.label}
-              </li>
-            )}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                label="Category"
-                fullWidth
-                margin="normal"
-                variant="outlined"
+          <Box display="flex" gap={2}>
+            <LocalizationProvider
+              dateAdapter={AdapterDayjs}
+              sx={{ marginTop: "15px" }}
+            >
+              <TimePicker
+                // sx={{ marginTop: "15px" }}
                 sx={{
-                  backgroundColor: darkMode ? "#333" : "#fff",
-                  borderRadius: 2,
+                  marginTop: "15px",
+                  backgroundColor: darkMode ? "#333" : "#fff", // Background color for light/dark mode
+                  color: darkMode ? "#fff" : "#000", // Text color for light/dark mode
+                  borderRadius: 2, // Rounded corners for a modern look
+                  height: "56px",
                   "& .MuiOutlinedInput-root": {
-                    borderRadius: 2,
+                    color: darkMode ? "#fff" : "#000",
+                    borderRadius: 2, // Apply rounding to the input field itself
                     "& fieldset": {
-                      borderColor: darkMode ? "#555" : "#ccc",
+                      borderColor: darkMode ? "#555" : "#ccc", // Border color for light/dark mode
                     },
                     "&:hover fieldset": {
-                      borderColor: darkMode ? "#1976d2" : "#3f51b5",
+                      borderColor: darkMode ? "#1976d2" : "#3f51b5", // Border color on hover
                     },
                     "&.Mui-focused fieldset": {
-                      borderColor: darkMode ? "#1976d2" : "#3f51b5",
+                      borderColor: darkMode ? "#1976d2" : "#3f51b5", // Border color on focus
                     },
                   },
                   "& .MuiInputLabel-root": {
-                    color: darkMode ? "#fff" : "#000",
+                    color: darkMode ? "#fff" : "#000", // Label color for light/dark mode
                   },
                   "& .MuiInputBase-input": {
-                    color: darkMode ? "#fff" : "#000",
+                    color: darkMode ? "#fff" : "#000", // Text color inside the input box
+                  },
+                  "& .MuiFormHelperText-root": {
+                    color: darkMode ? "#bbb" : "#333", // Color of helper text (if any)
+                  },
+                  "& .MuiPickersSectionList-root": {
+                    color: darkMode ? "#fff" : "#000", // Text color inside the input box
                   },
                 }}
+                // style={{ marginTop: "15px" }}
+                label="Alarm Time"
+                value={selectedTime}
+                onChange={(newValue) => setSelectedTime(newValue)}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    margin="normal"
+                    variant="outlined"
+                  />
+                )}
               />
-            )}
-          />
+            </LocalizationProvider>
+
+            <Autocomplete
+              freeSolo
+              fullWidth
+              value={category}
+              onChange={(event, newValue) => {
+                if (typeof newValue === "string") {
+                  // User typed and selected "Add 'XYZ'"
+                  if (!categories.includes(newValue)) {
+                    setCategories([...categories, newValue]);
+                  }
+                  setCategory(newValue);
+                } else if (newValue && newValue.inputValue) {
+                  // Clicked the "Add 'XYZ'" option
+                  if (!categories.includes(newValue.inputValue)) {
+                    setCategories([...categories, newValue.inputValue]);
+                  }
+                  setCategory(newValue.inputValue);
+                } else {
+                  setCategory(newValue || "");
+                }
+              }}
+              filterOptions={(options, params) => {
+                const filtered = options.filter((opt) => opt !== "All");
+                const { inputValue } = params;
+
+                const isExisting = filtered.some(
+                  (option) => inputValue.toLowerCase() === option.toLowerCase()
+                );
+
+                if (inputValue !== "" && !isExisting) {
+                  filtered.push({
+                    inputValue,
+                    label: `➕ Add "${inputValue}"`,
+                  });
+                }
+
+                return filtered;
+              }}
+              selectOnFocus
+              clearOnBlur
+              handleHomeEndKeys
+              options={categories.filter((c) => c !== "All")}
+              getOptionLabel={(option) => {
+                // Handle "Add 'xyz'" structure
+                if (typeof option === "string") return option;
+                if (option.inputValue) return option.inputValue;
+                return option.label || option;
+              }}
+              renderOption={(props, option) => (
+                <li {...props}>
+                  {typeof option === "string" ? option : option.label}
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Category"
+                  fullWidth
+                  margin="normal"
+                  variant="outlined"
+                  sx={{
+                    backgroundColor: darkMode ? "#333" : "#fff",
+                    borderRadius: 2,
+                    "& .MuiOutlinedInput-root": {
+                      borderRadius: 2,
+                      "& fieldset": {
+                        borderColor: darkMode ? "#555" : "#ccc",
+                      },
+                      "&:hover fieldset": {
+                        borderColor: darkMode ? "#1976d2" : "#3f51b5",
+                      },
+                      "&.Mui-focused fieldset": {
+                        borderColor: darkMode ? "#1976d2" : "#3f51b5",
+                      },
+                    },
+                    "& .MuiInputLabel-root": {
+                      color: darkMode ? "#fff" : "#000",
+                    },
+                    "& .MuiInputBase-input": {
+                      color: darkMode ? "#fff" : "#000",
+                    },
+                  }}
+                />
+              )}
+            />
+          </Box>
 
           <Button
             onClick={handleAdd}
@@ -482,6 +607,23 @@ function App() {
             </ListItem>
           ))}
         </List>
+
+        <Dialog open={isAlarmActive} onClose={stopAlarm}>
+          <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            <AlarmOnIcon color="error" />
+            Alarm Triggered
+          </DialogTitle>
+          <DialogContent>
+            <Typography>
+              Your alarm is going off. Click the button below to stop it.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={stopAlarm} variant="contained" color="error">
+              Stop Alarm
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Container>
     </Box>
   );
