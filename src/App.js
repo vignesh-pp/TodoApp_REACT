@@ -9,6 +9,7 @@ import {
   IconButton,
   Typography,
   Box,
+  Tooltip,
 } from "@mui/material";
 import {
   Dialog,
@@ -25,6 +26,10 @@ import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import dayjs from "dayjs";
 import Sound from "../src/assets/sounds/alarm.mp3"; // Adjust the path as necessary
+import axios from "axios";
+import InfoIcon from "@mui/icons-material/Info";
+
+const apiurl = "http://localhost:5000/api/"; // Replace with your actual API URL
 
 function App() {
   const [todos, setTodos] = useState(
@@ -49,11 +54,13 @@ function App() {
   const [isAlarmActive, setIsAlarmActive] = useState(false);
   const [audioInstance, setAudioInstance] = useState(null);
   const [alarmTimeoutId, setAlarmTimeoutId] = useState(null);
-  
+
   // Load todos and categories from localStorage on mount
   useEffect(() => {
     const storedTodos = localStorage.getItem("todos");
     const storedCategories = localStorage.getItem("categories");
+
+    console.log(storedTodos);
 
     if (storedTodos) setTodos(JSON.parse(storedTodos));
     if (storedCategories) {
@@ -64,33 +71,57 @@ function App() {
     }
   }, []);
 
+  useEffect(() => {
+    console.log("FETCHHHHHHHHH from API");
+
+    axios
+      .get(apiurl + "todoapp/getNotes")
+      .then((response) => {
+        console.log(response.data);
+        setTodos(response.data);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+
+      axios
+      .get(apiurl + "todoapp/categories")
+      .then((response) => {
+        console.log(response?.data);
+        // setTodos(response.data);
+      })
+      .catch((error) => {
+        console.error(error);
+      });
+  }, []);
+
   const playAlarm = () => {
     const audio = new Audio(Sound);
     audio.play();
     setAudioInstance(audio);
 
     const timeoutId = setTimeout(() => {
-        setIsAlarmActive(false);
-        audio.pause();
-        audio.currentTime = 0;
-        setAudioInstance(null);
+      setIsAlarmActive(false);
+      audio.pause();
+      audio.currentTime = 0;
+      setAudioInstance(null);
     }, 10000);
 
     setAlarmTimeoutId(timeoutId);
     setIsAlarmActive(true);
-};
-const stopAlarm = () => {
-  if (audioInstance) {
+  };
+  const stopAlarm = () => {
+    if (audioInstance) {
       audioInstance.pause();
       audioInstance.currentTime = 0;
       setAudioInstance(null);
-  }
-  if (alarmTimeoutId) {
+    }
+    if (alarmTimeoutId) {
       clearTimeout(alarmTimeoutId);
       setAlarmTimeoutId(null);
-  }
-  setIsAlarmActive(false);
-};
+    }
+    setIsAlarmActive(false);
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -129,22 +160,35 @@ const stopAlarm = () => {
     if (!input.trim()) return;
 
     const formattedTime = selectedTime ? selectedTime.format("HH:mm") : null;
+    const editTodo = {
+      text: input,
+      category,
+      alarmTime: formattedTime,
+    };
 
     if (editId) {
-      setTodos(
-        todos.map((todo) =>
-          todo.id === editId
-            ? {
-                ...todo,
-                text: input,
-                category,
-                alarmTime: formattedTime,
-                alarmTriggered: false, // reset alarm when updated
-              }
-            : todo
-        )
-      );
-      setEditId(null);
+      axios
+        .put(apiurl + `todoapp/editNote/${editId}`, editTodo)
+        .then((response) => {
+          console.log(response.data);
+          setTodos(
+            todos.map((todo) =>
+              todo.id === editId
+                ? {
+                    ...todo,
+                    text: input,
+                    category,
+                    alarmTime: formattedTime,
+                    alarmTriggered: false, // reset alarm when updated
+                  }
+                : todo
+            )
+          );
+          setEditId(null);
+        })
+        .catch((error) => {
+          console.error(error);
+        });
     } else {
       const newTodo = {
         id: Date.now(),
@@ -154,7 +198,15 @@ const stopAlarm = () => {
         alarmTime: formattedTime,
         alarmTriggered: false, // prevent immediate triggering
       };
-      setTodos([...todos, newTodo]);
+      axios
+        .post(apiurl + `todoapp/addNotes`, newTodo)
+        .then((response) => {
+          console.log(response.data);
+          setTodos([...todos, newTodo]);
+        })
+        .catch((error) => {
+          console.error(error);
+        });
     }
 
     setInput("");
@@ -163,7 +215,15 @@ const stopAlarm = () => {
   };
 
   const handleDelete = (id) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
+    axios
+      .delete(apiurl + `todoapp/deleteNote/${id}`)
+      .then((response) => {
+        console.log(response.data);
+        setTodos(todos.filter((todo) => todo.id !== id));
+      })
+      .catch((error) => {
+        console.error(error);
+      });
   };
 
   const handleEdit = (todo) => {
@@ -173,11 +233,27 @@ const stopAlarm = () => {
   };
 
   const toggleComplete = (id) => {
-    setTodos(
-      todos.map((todo) =>
-        todo.id === id ? { ...todo, completed: !todo.completed } : todo
-      )
-    );
+    const formattedTime = selectedTime ? selectedTime.format("HH:mm") : null;
+
+    const editTodo = {
+      text: input,
+      category,
+      alarmTime: formattedTime,
+      completed: !todos.find((todo) => todo.id === id).completed,
+    };
+    axios
+      .put(apiurl + `todoapp/editNote/${id}`, editTodo)
+      .then((response) => {
+        console.log(response.data);
+        setTodos(
+          todos.map((todo) =>
+            todo.id === id ? { ...todo, completed: !todo.completed } : todo
+          )
+        );
+      })
+      .catch((error) => {
+        console.error(error);
+      });
   };
 
   const filtered =
@@ -226,10 +302,18 @@ const stopAlarm = () => {
             mb={2}
           >
             <Typography variant="h4">📝 Todo List</Typography>
-            <Box onClick={() => setDarkMode(!darkMode)}>
+            <Box
+              onClick={() => setDarkMode(!darkMode)}
+              className="d-flex align-items-center"
+            >
               <Typography variant="h6" sx={{ cursor: "pointer" }}>
                 {darkMode ? "🌙" : "☀️"}
               </Typography>
+              <Tooltip title="App created by React.js,Node,mangoDB">
+                <IconButton>
+                  <InfoIcon style={{ color: darkMode ? "white" : "gray" }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           </Box>
 
@@ -607,6 +691,9 @@ const stopAlarm = () => {
             </ListItem>
           ))}
         </List>
+
+        <iframe src="http://localhost:8080" width="800" height="1000"></iframe>
+
 
         <Dialog open={isAlarmActive} onClose={stopAlarm}>
           <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
