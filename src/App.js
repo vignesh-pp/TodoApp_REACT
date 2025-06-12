@@ -692,7 +692,6 @@ function App() {
           ))}
         </List>
 
-        <iframe src="http://localhost:8080" width="800" height="1000"></iframe>
 
 
         <Dialog open={isAlarmActive} onClose={stopAlarm}>
